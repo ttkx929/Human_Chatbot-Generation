@@ -1,4 +1,4 @@
-# Human-Chatbot Dialogue Generation
+# DialogueForge: LLM Simulation of Human-Chatbot Dialogue
 
 ## Generation of Dialogues
 Please contact Ruizhe Zhu (zhurui@student.ethz.ch) for questions of this part.
@@ -52,7 +52,7 @@ You have to start a new inference point on Hugging Face before using them for ge
 Please contact Hao Zhu (haozhu2@student.ethz.ch) for questions of this part.
 
 ### Evaluation Metrics
-All the metrics are defined in `evaluation_metrics.py`. For more details, please check the project report.
+All the metrics are defined in `evaluation_metrics.py`. For more details, please check [our paper](https://arxiv.org/abs/2507.15752).
 
 Prompts of the judge LLM are defined in `prompts.py`.  
 
@@ -62,38 +62,50 @@ These two files are provided by Shijing Cai from Calvin Risk AG, Switzerland.
 The code to run the UniEval, PairEval, and GTEval process are defined in `uni_eval.py`, `pair_eval.py`, and `gt_eval.py`.  
 
 Before running, you need to change sevaral variables in the files: 
-
-`ChatGPT4o_api_key`: The OpenAI API key.
-
-`dialogue_data_folder`: the directory where the dialogue data files to be evaluated reside.
-
-`saved_result_folder`: the directory where you want to store the Evaluation results. 
-
-`dialogue_data_file_names`: the dialogue data files you want to evaluate.
-
-`index_pair_list`: For the PairEval and GTEval, you need to sepcify the conversations to be compared.  
+- `ChatGPT4o_api_key`: the OpenAI API key.
+- `dialogue_data_folder`: the directory where the dialogue data files to be evaluated reside.
+- `saved_result_folder`: the directory where you want to store the Evaluation results. 
+- `dialogue_data_file_names`: the dialogue data files you want to evaluate.
+- `index_pair_list`: for the PairEval and GTEval, you need to specify the conversations to be compared.  
 
 Then, just execute: 
-
-`python3 *_eval.py`
+```bash
+python3 *_eval.py
+```
 
 ### Evaluation results
 They are stored in `result_oasst` and `result_arena`.  
 
-And we visualize the results. 
+And we visualize the results:
 
-[oasst UniEval (6-turns)](Evaluation/result_summary_oasst/GPT4o_Evaluator/oasst_uni_eval_6_turns.pdf)
+- [oasst UniEval (6-turns)](Evaluation/result_summary_oasst/GPT4o_Evaluator/oasst_uni_eval_6_turns.pdf)
 
-[oasst UniEval (12-turns)](Evaluation/result_summary_oasst/GPT4o_Evaluator/oasst_uni_eval_12_turns.pdf)
+- [oasst UniEval (12-turns)](Evaluation/result_summary_oasst/GPT4o_Evaluator/oasst_uni_eval_12_turns.pdf)
 
-[arena UniEval (6-turns)](Evaluation/result_summary_arena/GPT4o_Evaluator/arena_uni_eval_6_turns.pdf)
+- [arena UniEval (6-turns)](Evaluation/result_summary_arena/GPT4o_Evaluator/arena_uni_eval_6_turns.pdf)
 
-[arena UniEval (12-turns)](Evaluation/result_summary_arena/GPT4o_Evaluator/arena_uni_eval_12_turns.pdf)
+- [arena UniEval (12-turns)](Evaluation/result_summary_arena/GPT4o_Evaluator/arena_uni_eval_12_turns.pdf)
 
-[oasst GTEval (6-turns)](Evaluation/result_summary_oasst/GPT4o_Evaluator/oasst_gt_eval_6_turns.pdf)
+- [oasst GTEval (6-turns)](Evaluation/result_summary_oasst/GPT4o_Evaluator/oasst_gt_eval_6_turns.pdf)
 
-[oasst GTEval (12-turns)](Evaluation/result_summary_oasst/GPT4o_Evaluator/oasst_gt_eval_12_turns.pdf)
+- [oasst GTEval (12-turns)](Evaluation/result_summary_oasst/GPT4o_Evaluator/oasst_gt_eval_12_turns.pdf)
 
-[arena GTEval (6-turns)](Evaluation/result_summary_arena/GPT4o_Evaluator/arena_gt_eval_6_turns.pdf)
+- [arena GTEval (6-turns)](Evaluation/result_summary_arena/GPT4o_Evaluator/arena_gt_eval_6_turns.pdf)
 
-[arena GTEval (12-turns)](Evaluation/result_summary_arena/GPT4o_Evaluator/arena_gt_eval_12_turns.pdf)
+- [arena GTEval (12-turns)](Evaluation/result_summary_arena/GPT4o_Evaluator/arena_gt_eval_12_turns.pdf)
+
+## Citation
+The paper related to this work is published at the [KDD 2025 workshop on Evaluation and Trustworthiness of Agentic and Generative AI Models](https://kdd-eval-workshop.github.io/genai-evaluation-kdd2025/) and is available on [arXiv](https://arxiv.org/abs/2507.15752).
+
+When using this repository or our fine-tuned models in your work, please cite it as follows:
+```
+@misc{zhu2025dialogueforgellmsimulationhumanchatbot,
+      title={DialogueForge: LLM Simulation of Human-Chatbot Dialogue}, 
+      author={Ruizhe Zhu and Hao Zhu and Yaxuan Li and Syang Zhou and Shijing Cai and Malgorzata Lazuka and Elliott Ash},
+      year={2025},
+      eprint={2507.15752},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2507.15752}, 
+}
+```
