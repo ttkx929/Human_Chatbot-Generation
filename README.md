@@ -1,5 +1,78 @@
 # DialogueForge: LLM Simulation of Human-Chatbot Dialogue
 
+> **Fork note:** This repository is based on [nerchio/Human_Chatbot-Generation](https://github.com/nerchio/Human_Chatbot-Generation). The section below documents **GPQA Diamond extensions** added in this fork. The original DialogueForge documentation follows unchanged.
+
+## GPQA Diamond Extension (This Fork)
+
+This fork extends the original DialogueForge pipeline to generate **multi-turn science tutoring dialogues** from [GPQA Diamond](https://huggingface.co/datasets/Idavidrein/gpqa) (graduate-level MCQ benchmark), for assistant-style SFT data similar in spirit to [Baize](https://github.com/ProjectBaize/baize-chatbot).
+
+### What was added
+
+| Component | Path | Purpose |
+|-----------|------|---------|
+| GPQA seed builder | `Generation/data/prepare_gpqa_seed.py` | Convert GPQA Diamond → 2-turn seed jsonl |
+| Science prompts | `Generation/prompts_gpqa.py` | Inquirer (student) + responder (tutor) prompts |
+| Dialogue generation | `Generation/main.py` | `--data gpqa_diamond`, DeepSeek by default |
+| Bot-ending fix | `Generation/data/conversation_utils.py`, `fix_dialogue_endings.py` | Ensure dialogues end on a tutor turn |
+| SFT export | `Generation/data/sft_reformat_gpqa.py` | ShareGPT / Baize / per-turn assistant formats |
+| Pipeline example | `Generation/run_gpqa_pipeline.ps1` | End-to-end command reference |
+| Example CSV | `Generation/data/gpqa_diamond_example.csv` | Local test without HuggingFace |
+
+### Quick start
+
+```bash
+cd Generation
+pip install -r requirements.txt
+```
+
+1. **Configure API keys** — create `Generation/api.yaml` with your keys (at minimum `deepseek`; do **not** commit real keys).
+
+2. **HuggingFace access** — accept terms at [Idavidrein/gpqa](https://huggingface.co/datasets/Idavidrein/gpqa), then `huggingface-cli login`.
+
+3. **Build seeds** (198 questions, or `--limit 5` for a smoke test):
+
+```bash
+python data/prepare_gpqa_seed.py --source huggingface --seed-model DeepSeek
+```
+
+4. **Generate multi-turn dialogues**:
+
+```bash
+python main.py --data gpqa_diamond --inquirer_model DeepSeek --responder_model DeepSeek --max_turns 12
+```
+
+5. **Export for fine-tuning** (ShareGPT format):
+
+```bash
+python data/sft_reformat_gpqa.py \
+  --input results/gpqa_diamond_DeepSeek_DeepSeek_12.jsonl \
+  --output data/gpqa_diamond_sft.json \
+  --format sharegpt
+```
+
+6. **Fix existing jsonl** that ends on a human turn (optional):
+
+```bash
+python data/fix_dialogue_endings.py --input results/your_dialogues.jsonl
+```
+
+### Data flow
+
+```
+GPQA Diamond → prepare_gpqa_seed.py → gpqa_diamond_seed.jsonl
+    → main.py (LangGraph dual-agent) → results/*.jsonl
+    → sft_reformat_gpqa.py → gpqa_diamond_sft.json → LoRA / SFT
+```
+
+### Notes
+
+- **Models** are loaded lazily in `models.py` — only the model you pass on the CLI needs a valid API key in `api.yaml`.
+- **Default LLM** for this fork is **DeepSeek** (`deepseek-chat` via OpenAI-compatible API); see `Generation/setting.yaml`.
+- **Do not evaluate** on GPQA Diamond after training on GPQA-generated data (contamination). Use a held-out science benchmark instead.
+- Generated artifacts (`results/`, seeds, `gpqa_diamond_sft.json`) are listed in `.gitignore` and are not meant to be committed.
+
+---
+
 ## Generation of Dialogues
 Please contact Ruizhe Zhu (zhurui@student.ethz.ch) for questions of this part.
 
