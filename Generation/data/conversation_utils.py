@@ -7,7 +7,8 @@ from langchain.schema import AIMessage, HumanMessage, SystemMessage
 CLOSING_SUFFIX = (
     "\n\nThe student has no further questions. "
     "Reply with a brief, supportive closing (2-4 sentences). "
-    "Summarize the main takeaway without introducing new material."
+    "Summarize the main takeaway without introducing new material. "
+    "You may confirm the final option letter only if the student already derived it."
 )
 
 

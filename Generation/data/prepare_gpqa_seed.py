@@ -37,6 +37,15 @@ INCORRECT_KEYS = (
 )
 SUBDOMAIN_KEYS = ("Subdomain", "subdomain", "High-level domain", "high_level_domain")
 
+PEDAGOGY_MODES = ("scaffold", "walkthrough", "misconception")
+
+HUMAN_OPENINGS = (
+    "I'm stuck on this {subdomain} MCQ — I have a guess but I'm not confident.",
+    "I tried this {subdomain} question but my numbers don't match any option.",
+    "I think I know which option might be right, but I can't justify it rigorously.",
+    "I'm stuck on a challenging {subdomain} question and could use your help thinking it through.",
+)
+
 
 def _pick(row: dict, keys: tuple[str, ...]) -> str:
     for key in keys:
@@ -100,22 +109,49 @@ def load_from_csv(csv_path: str, limit: int | None) -> list[dict]:
 
 def build_task_summary(record: dict) -> str:
     return (
-        f"You are working through a graduate-level {record['subdomain']} problem. "
-        f"You want to understand the scientific reasoning behind the question, compare plausible "
-        f"answer choices, and reach the correct conclusion through step-by-step discussion with a tutor. "
-        f"The target problem is about: {record['question'][:500]}"
+        f"Graduate-level {record['subdomain']} multiple-choice problem. "
+        f"Work through the scientific reasoning with a tutor; understand why wrong paths fail. "
+        f"Problem: {record['question'][:500]}"
     )
 
 
-def build_human_seed(record: dict) -> str:
+def pick_pedagogy_mode(record: dict) -> str:
+    rng = random.Random(record["question_id"])
+    return rng.choice(PEDAGOGY_MODES)
+
+
+def build_human_seed(record: dict, pedagogy_mode: str) -> str:
+    rng = random.Random(record["question_id"])
     choice_lines = "\n".join(
         f"{label}. {text}" for label, text in sorted(record["choices"].items())
     )
+    opener = rng.choice(HUMAN_OPENINGS).format(subdomain=record["subdomain"])
+
+    closing = (
+        "Can you help me work through the reasoning without jumping straight to the answer?"
+    )
+    if pedagogy_mode == "walkthrough":
+        wrong_label = next(
+            label for label in sorted(record["choices"]) if label != record["correct_label"]
+        )
+        closing = (
+            f"I was leaning toward option {wrong_label}, but I'm not sure. "
+            f"Can you walk me through the steps and point out where I might be wrong?"
+        )
+    elif pedagogy_mode == "misconception":
+        wrong_label = next(
+            label for label in sorted(record["choices"]) if label != record["correct_label"]
+        )
+        closing = (
+            f"I keep thinking option {wrong_label} makes sense because of a shortcut I used, "
+            f"but something feels off. Can you help me find the flaw in my reasoning?"
+        )
+
     return (
-        f"I'm stuck on a challenging {record['subdomain']} question and could use your help thinking it through.\n\n"
+        f"{opener}\n\n"
         f"{record['question']}\n\n"
         f"Here are the options:\n{choice_lines}\n\n"
-        f"Can you walk me through how to approach this step by step?"
+        f"{closing}"
     )
 
 
@@ -132,10 +168,13 @@ def build_bot_seed_template(record: dict) -> str:
 
 SEED_SYSTEM_PROMPT = """You are an expert science tutor.
 Write the opening tutor reply for a graduate-level multiple-choice science problem.
+
 Requirements:
-- Be accurate and aligned with the known correct answer.
-- Explain how to approach the problem, but do not simply say "the answer is X" in the first sentence.
-- Use 150-300 words.
+- Teach how to START: identify the core concept, list knowns, and propose the first reasoning step.
+- Do NOT state the correct option letter or say "the answer is".
+- Do NOT eliminate all distractors in the opening.
+- Ask what part of the setup confuses the student most.
+- Use 120-220 words.
 - Sound like a helpful human tutor.
 """
 
@@ -152,15 +191,16 @@ def build_bot_seed_with_llm(record: dict, seed_model_name: str) -> str:
         f"Subdomain: {record['subdomain']}\n\n"
         f"Question:\n{record['question']}\n\n"
         f"Options:\n{choice_lines}\n\n"
-        f"Known correct option: {record['correct_label']} ({record['correct_answer']})\n\n"
-        f"Write the tutor's first reply to the student."
+        f"Write the tutor's first reply to the student. "
+        f"Do not reveal which option is correct."
     )
     response = llm.invoke([SystemMessage(content=SEED_SYSTEM_PROMPT), HumanMessage(content=user_prompt)])
     return response.content.strip()
 
 
 def record_to_seed(record: dict, seed_model_name: str | None) -> dict:
-    human_seed = build_human_seed(record)
+    pedagogy_mode = pick_pedagogy_mode(record)
+    human_seed = build_human_seed(record, pedagogy_mode)
     if seed_model_name:
         bot_seed = build_bot_seed_with_llm(record, seed_model_name)
     else:
@@ -180,6 +220,7 @@ def record_to_seed(record: dict, seed_model_name: str | None) -> dict:
             "correct_label": record["correct_label"],
             "correct_answer": record["correct_answer"],
             "choices": record["choices"],
+            "pedagogy_mode": pedagogy_mode,
         },
     }
 
@@ -193,8 +234,8 @@ def main():
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
         "--seed-model",
-        default="DeepSeek",
-        help="Model from models.py for first tutor reply (DeepSeek/GPT4o). Use 'none' for template-only seed.",
+        default="none",
+        help="Model from models.py for first tutor reply (DeepSeek/GPT4o). Default: none (template seed).",
     )
     args = parser.parse_args()
 

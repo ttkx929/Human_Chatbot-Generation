@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from data.conversation_utils import strip_trailing_human_turns
+from data.quality_checks import early_spoiler_in_messages
 
 
 def load_jsonl(path: Path) -> list[dict]:
@@ -63,8 +64,29 @@ def to_assistant_turns(conversation: list[dict], topic: str) -> list[dict]:
     return samples
 
 
-def convert(rows: list[dict], fmt: str, *, drop_trailing_human: bool = True) -> list[dict]:
+def attach_quality_metadata(item: dict, conversation: list[dict]) -> None:
+    messages = item.get("messages")
+    if not messages:
+        sharegpt = to_sharegpt(conversation)
+        messages = sharegpt["messages"]
+    quality = {
+        "early_spoiler": early_spoiler_in_messages(messages),
+        "turns": len(messages),
+    }
+    item.setdefault("metadata", {})
+    item["metadata"]["quality"] = quality
+
+
+def convert(
+    rows: list[dict],
+    fmt: str,
+    *,
+    drop_trailing_human: bool = True,
+    filter_early_spoiler: bool = False,
+    tag_quality: bool = True,
+) -> list[dict]:
     output = []
+    skipped = 0
     for row in rows:
         conversation = list(row["conversation"])
         if drop_trailing_human:
@@ -73,14 +95,35 @@ def convert(rows: list[dict], fmt: str, *, drop_trailing_human: bool = True) -> 
         if fmt == "sharegpt":
             item = to_sharegpt(conversation)
             if "metadata" in row:
-                item["metadata"] = row["metadata"]
+                item["metadata"] = dict(row["metadata"])
+            if tag_quality:
+                attach_quality_metadata(item, conversation)
+            if filter_early_spoiler and item.get("metadata", {}).get("quality", {}).get("early_spoiler"):
+                skipped += 1
+                continue
             output.append(item)
         elif fmt == "baize":
-            output.append(to_baize(conversation, topic))
+            item = to_baize(conversation, topic)
+            if tag_quality:
+                attach_quality_metadata(item, conversation)
+            if filter_early_spoiler and item.get("metadata", {}).get("quality", {}).get("early_spoiler"):
+                skipped += 1
+                continue
+            output.append(item)
         elif fmt == "assistant_turns":
-            output.extend(to_assistant_turns(conversation, topic))
+            for item in to_assistant_turns(conversation, topic):
+                if "metadata" in row:
+                    item["metadata"] = dict(row["metadata"])
+                if tag_quality:
+                    attach_quality_metadata(item, conversation)
+                if filter_early_spoiler and item.get("metadata", {}).get("quality", {}).get("early_spoiler"):
+                    skipped += 1
+                    continue
+                output.append(item)
         else:
             raise ValueError(f"Unknown format: {fmt}")
+    if filter_early_spoiler and skipped:
+        print(f"Filtered {skipped} samples with early answer spoilers.")
     return output
 
 
@@ -98,10 +141,26 @@ def main():
         action="store_true",
         help="Keep dialogues that end on a human turn (not recommended for SFT)",
     )
+    parser.add_argument(
+        "--filter-early-spoiler",
+        action="store_true",
+        help="Drop samples whose first assistant reply reveals the answer",
+    )
+    parser.add_argument(
+        "--no-quality-tags",
+        action="store_true",
+        help="Do not attach metadata.quality tags",
+    )
     args = parser.parse_args()
 
     rows = load_jsonl(Path(args.input))
-    converted = convert(rows, args.format, drop_trailing_human=not args.keep_trailing_human)
+    converted = convert(
+        rows,
+        args.format,
+        drop_trailing_human=not args.keep_trailing_human,
+        filter_early_spoiler=args.filter_early_spoiler,
+        tag_quality=not args.no_quality_tags,
+    )
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -113,7 +172,12 @@ def main():
         with output_path.open("w", encoding="utf-8") as f:
             json.dump(converted, f, ensure_ascii=False, indent=2)
 
+    spoiler_count = sum(
+        1 for item in converted if item.get("metadata", {}).get("quality", {}).get("early_spoiler")
+    )
     print(f"Wrote {len(converted)} samples to {output_path} ({args.format})")
+    if not args.no_quality_tags and converted:
+        print(f"Early spoiler rate: {spoiler_count}/{len(converted)}")
 
 
 if __name__ == "__main__":

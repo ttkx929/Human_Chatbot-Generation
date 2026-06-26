@@ -15,7 +15,7 @@ gpt4o-mini:
 deepseek:
   base_url: https://api.deepseek.com
   model: deepseek-chat
-  temperature: 1.0
+  temperature: 0.3
   max_tokens: 2000
   max_retries: 3
   price: CNY-2-8

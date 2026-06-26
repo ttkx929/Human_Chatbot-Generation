@@ -29,7 +29,7 @@ DATA_PATHS = {
     "gpqa_diamond": "data/gpqa_diamond_seed.jsonl",
 }
 
-PROMPT_GETTERS: dict[str, Callable[[str], tuple[str, str, str]]] = {
+PROMPT_GETTERS: dict[str, Callable[..., tuple[str, str, str]]] = {
     "oasst1_en": GET_PROMPT,
     "arena": GET_PROMPT,
     "gpqa_diamond": GET_GPQA_PROMPT,
@@ -42,6 +42,23 @@ class State(TypedDict):
     inquirer_system_prompt: str
     inquirer_prompt: str
     responder_system_prompt: str
+    task_summary: str
+    pedagogy_mode: str
+
+
+def count_assistant_turns(messages: list) -> int:
+    return sum(1 for message in messages if isinstance(message, AIMessage))
+
+
+def build_prompts(task_summary: str, *, assistant_turns: int = 0, pedagogy_mode: str = "") -> tuple[str, str, str]:
+    getter = PROMPT_GETTERS.get(args.data, GET_PROMPT)
+    if args.data == "gpqa_diamond":
+        return getter(
+            task_summary,
+            assistant_turns=assistant_turns,
+            pedagogy_mode=pedagogy_mode or None,
+        )
+    return getter(task_summary)
 
 
 def inquirer(state: State):
@@ -59,7 +76,12 @@ def inquirer(state: State):
 
 
 def responder(state: State):
-    system_prompt = state["responder_system_prompt"]
+    assistant_turns = count_assistant_turns(state["messages"])
+    _, _, system_prompt = build_prompts(
+        state["task_summary"],
+        assistant_turns=assistant_turns,
+        pedagogy_mode=state.get("pedagogy_mode", ""),
+    )
     last_human = ""
     for message in reversed(state["messages"]):
         if isinstance(message, HumanMessage):
@@ -106,10 +128,9 @@ graph = graph_builder.compile()
 
 inquirer_llm = get_model(args.inquirer_model)
 responder_llm = get_model(args.responder_model)
-get_prompt = PROMPT_GETTERS.get(args.data, GET_PROMPT)
 
 
-def graph_update(qa_history: list, task_summary: str):
+def graph_update(qa_history: list, task_summary: str, metadata: dict | None = None):
     messages = []
     for detail in qa_history:
         if detail["role"] == "human":
@@ -119,13 +140,22 @@ def graph_update(qa_history: list, task_summary: str):
         else:
             raise ValueError("Invalid role")
 
-    inquirer_system_prompt, inquirer_prompt, responder_system_prompt = get_prompt(task_summary)
+    metadata = metadata or {}
+    pedagogy_mode = metadata.get("pedagogy_mode", "")
+    assistant_turns = sum(1 for detail in qa_history if detail["role"] == "bot")
+    inquirer_system_prompt, inquirer_prompt, responder_system_prompt = build_prompts(
+        task_summary,
+        assistant_turns=assistant_turns,
+        pedagogy_mode=pedagogy_mode,
+    )
     initial_state = {
         "messages": messages,
         "turns": len(messages),
         "inquirer_system_prompt": inquirer_system_prompt,
         "inquirer_prompt": inquirer_prompt,
         "responder_system_prompt": responder_system_prompt,
+        "task_summary": task_summary,
+        "pedagogy_mode": pedagogy_mode,
     }
 
     try:
@@ -144,11 +174,11 @@ def graph_update(qa_history: list, task_summary: str):
         final_state = graph.invoke(initial_state)
         token_usage = token_counter.get_stats()
 
-    final_state = _ensure_state_ends_with_bot(final_state, responder_system_prompt)
+    final_state = _ensure_state_ends_with_bot(final_state)
     return final_state, token_usage
 
 
-def _ensure_state_ends_with_bot(state: dict, responder_system_prompt: str) -> dict:
+def _ensure_state_ends_with_bot(state: dict) -> dict:
     messages = state["messages"]
     if not messages or isinstance(messages[-1], AIMessage):
         return state
@@ -160,6 +190,12 @@ def _ensure_state_ends_with_bot(state: dict, responder_system_prompt: str) -> di
         elif isinstance(message, AIMessage):
             conversation.append({"role": "bot", "content": message.content})
 
+    assistant_turns = count_assistant_turns(messages)
+    _, _, responder_system_prompt = build_prompts(
+        state["task_summary"],
+        assistant_turns=max(assistant_turns, 3),
+        pedagogy_mode=state.get("pedagogy_mode", ""),
+    )
     fixed = ensure_conversation_ends_with_bot(
         conversation,
         responder_system_prompt,
@@ -219,7 +255,8 @@ if __name__ == "__main__":
             seed = dialogue["conversation_id"][:2]
             task_summary = dialogue["task_summary"]
             seed_conversation = dialogue["conversation"][:2]
-            final_state, token_usage = graph_update(seed_conversation, task_summary)
+            metadata = dialogue.get("metadata", {})
+            final_state, token_usage = graph_update(seed_conversation, task_summary, metadata)
 
             generated_conversation = state_to_generated_conversation(final_state["messages"])
             full_conversation = seed_conversation + generated_conversation
@@ -237,8 +274,8 @@ if __name__ == "__main__":
                 "responder_model": args.responder_model,
                 "token_usage": token_usage,
             }
-            if "metadata" in dialogue:
-                generated_dialogue["metadata"] = dialogue["metadata"]
+            if metadata:
+                generated_dialogue["metadata"] = metadata
 
             writer.write(generated_dialogue)
 
